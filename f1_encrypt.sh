@@ -62,7 +62,7 @@ encrypt_file_() {
     --type luks2 \
     --cipher aes-xts-plain64 \
     --hash sha3-512 \
-    --iter-time 2000 \
+    --iter-time 10000 `# 10000 ms` \
     --key-size 512 \
     --pbkdf argon2id \
     --use-urandom \
