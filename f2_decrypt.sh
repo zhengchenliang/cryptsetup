@@ -10,13 +10,19 @@ generate_device_name_() {
 }
 
 cleanup_() {
-  local device_name="$1"
-  if [ -d "/mnt/encrypted" ]; then
+  local container_file="$1"
+  local device_name="$2"
+  # Find loop device
+  local loopdev
+  loopdev=$(losetup -j "$container_file" | cut -d: -f1)
+  if mountpoint -q /mnt/encrypted; then
     umount /mnt/encrypted || true
-    rmdir /mnt/encrypted || true
   fi
   if cryptsetup status "$device_name" >/dev/null 2>&1; then
-    cryptsetup luksClose "$device_name"
+    cryptsetup luksClose "$device_name" || true
+  fi
+  if [ -n "$loopdev" ]; then
+    losetup -d "$loopdev" || true
   fi
 }
 
@@ -43,7 +49,8 @@ decrypt_file_() {
 
   trap 'cleanup_ "$device_name"; exit 1' INT TERM EXIT
 
-  cryptsetup luksOpen "$container_file" "$device_name"
+  loopdev=$(losetup --find --show "$container_file")
+  cryptsetup luksOpen "$loopdev" "$device_name"
 
   mkdir -p /mnt/encrypted
   mount "/dev/mapper/$device_name" /mnt/encrypted
@@ -52,14 +59,12 @@ decrypt_file_() {
   encrypted_inner_file=$(ls /mnt/encrypted | grep -v lost+found | head -n1)
   if [ -z "$encrypted_inner_file" ]; then
     echo "Error: No file found inside the container."
-    umount /mnt/encrypted
-    cryptsetup luksClose "$device_name"
+    cleanup_ "$container_file" "$device_name"
     exit 1
   fi
   cp "/mnt/encrypted/$encrypted_inner_file" "$output_file"
 
-  umount /mnt/encrypted
-  cryptsetup luksClose "$device_name"
+  cleanup_ "$container_file" "$device_name"
 
   trap - INT TERM EXIT
 
