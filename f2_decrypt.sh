@@ -12,17 +12,39 @@ generate_device_name_() {
 cleanup_() {
   local container_file="$1"
   local device_name="$2"
-  # Find loop device
-  local loopdev
-  loopdev=$(losetup -j "$container_file" | cut -d: -f1)
-  if mountpoint -q /mnt/encrypted; then
-    umount /mnt/encrypted || true
+  local mapper_dev="/dev/mapper/$device_name"
+  if mountpoint -q /mnt/encrypted 2>/dev/null; then
+    umount /mnt/encrypted 2>/dev/null || true
   fi
-  if cryptsetup status "$device_name" >/dev/null 2>&1; then
-    cryptsetup luksClose "$device_name" || true
-  fi
-  if [ -n "$loopdev" ]; then
-    losetup -d "$loopdev" || true
+  local max_attempts=5
+  local attempt=1
+  while [ $attempt -le $max_attempts ]; do
+    if [ -e "$mapper_dev" ]; then
+      local mount_points
+      mount_points=$(mount | grep "$mapper_dev" | awk '{print $3}' || true)
+      if [ -n "$mount_points" ]; then
+        while IFS= read -r mnt; do
+          umount -l "$mnt" 2>/dev/null || true
+        done <<< "$mount_points"
+      fi
+    fi
+    if cryptsetup status "$device_name" >/dev/null 2>&1; then
+      if cryptsetup luksClose "$device_name" 2>/dev/null; then
+        break
+      fi
+    else
+      break
+    fi
+    sleep 0.2
+    attempt=$((attempt + 1))
+  done
+  rm -rf /mnt/encrypted 2>/dev/null || true
+  local loopdevs
+  loopdevs=$(losetup -j "$container_file" 2>/dev/null | cut -d: -f1 || true)
+  if [ -n "$loopdevs" ]; then
+    for dev in $loopdevs; do
+      losetup -d "$dev" 2>/dev/null || true
+    done
   fi
 }
 
@@ -47,7 +69,7 @@ decrypt_file_() {
   local device_name
   device_name=$(generate_device_name_ "$container_file")
 
-  trap 'cleanup_ "$device_name"; exit 1' INT TERM EXIT
+  trap 'cleanup_ "$container_file" "$device_name"; exit 1' INT TERM EXIT
 
   loopdev=$(losetup --find --show "$container_file")
   cryptsetup luksOpen "$loopdev" "$device_name"
