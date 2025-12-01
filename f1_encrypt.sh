@@ -26,16 +26,18 @@ generate_device_name_() {
 }
 
 cleanup_() {
-  local device_name="$1"
-  echo "Cleaning up..."
+  local container_file="$1"
+  local device_name="$2"
   if mountpoint -q /mnt/encrypted 2>/dev/null; then
     umount /mnt/encrypted || umount -f /mnt/encrypted || true
   fi
   if cryptsetup status "$device_name" >/dev/null 2>&1; then
     cryptsetup luksClose "$device_name" || true
   fi
-  if [ -d "/mnt/encrypted" ]; then
-    rm -rf /mnt/encrypted 2>/dev/null || true
+  rm -rf /mnt/encrypted 2>/dev/null || true
+  loopdev=$(losetup -j "$container_file" | cut -d: -f1)
+  if [ -n "$loopdev" ]; then
+    losetup -d "$loopdev" || true
   fi
 }
 
@@ -67,9 +69,10 @@ encrypt_file_() {
   local device_name
   device_name=$(generate_device_name_ "$container_file")
 
-  trap 'cleanup_ "$device_name"; exit 1' INT TERM EXIT
+  trap 'cleanup_ "$container_file" "$device_name"; exit 1' INT TERM EXIT
 
   echo "Setting up LUKS encryption..."
+  loopdev=$(losetup --find --show "$container_file")
   cryptsetup \
     --type luks2 \
     --cipher aes-xts-plain64 \
@@ -80,10 +83,10 @@ encrypt_file_() {
     --use-urandom \
     --verify-passphrase \
     luksFormat \
-    "$container_file"
+    "$loopdev"
 
   echo "Opening encrypted container..."
-  cryptsetup luksOpen "$container_file" "$device_name"
+  cryptsetup luksOpen "$loopdev" "$device_name"
 
   echo "Creating filesystem..."
   mkfs.ext4 -m 1 "/dev/mapper/$device_name"
@@ -98,7 +101,7 @@ encrypt_file_() {
   local required_space=$((file_size / 1024)) # MB to KB
   if [ "$available_space" -lt "$required_space" ]; then
     echo "Error: Not enough space in container. Available: ${available_space}KB, Required: ${required_space}KB"
-    cleanup_ "$device_name"
+    cleanup_ "$container_file" "$device_name"
     rm -f "$container_file"
     exit 1
   fi
@@ -107,7 +110,7 @@ encrypt_file_() {
 
   echo "Unmounting and closing..."
   trap - INT TERM EXIT
-  cleanup_ "$device_name"
+  cleanup_ "$container_file" "$device_name"
   echo "Encryption complete: $container_file created."
   echo "Container size: ${mb_count} MB"
   echo "Original file size: $((file_size / 1048576)) MB"
