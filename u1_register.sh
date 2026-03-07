@@ -15,7 +15,7 @@ if [ ! -f "$EXEC" ]; then
   echo "$0: '$EXEC' does not exist."
   exit 2
 fi
-chmod +x "$EXEC"
+
 if [ ! -x "$EXEC" ]; then
   echo "$0: '$EXEC' is not executable."
   exit 3
