@@ -10,6 +10,9 @@ if [ $# -ne 1 ]; then
 fi
 
 EXEC="$1"
+if [ -f "$EXEC" ]; then
+  EXEC=$(realpath "$EXEC")
+fi
 
 EXEC_NAME=$(basename "$EXEC")
 SERVICE_NAME=$(echo "$EXEC_NAME" | tr '[:upper:]' '[:lower:]')
