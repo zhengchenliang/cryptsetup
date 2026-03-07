@@ -19,6 +19,7 @@ if [ ! -x "$EXEC" ]; then
   echo "$0: '$EXEC' is not executable."
   exit 3
 fi
+EXEC=$(realpath "$EXEC")
 
 EXEC_NAME=$(basename "$EXEC")
 SERVICE_NAME=$(echo "$EXEC_NAME" | tr '[:upper:]' '[:lower:]')
